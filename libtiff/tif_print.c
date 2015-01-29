@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: tif_print.c,v 1.61 2012-12-12 22:50:18 tgl Exp $ */
 
 /*
  * Copyright (c) 1988-1997 Sam Leffler

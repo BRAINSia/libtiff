@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: tif_write.c,v 1.38 2013-01-18 21:57:12 fwarmerdam Exp $ */
 
 /*
  * Copyright (c) 1988-1997 Sam Leffler

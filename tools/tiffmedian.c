@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: tiffmedian.c,v 1.10 2010-03-10 18:56:50 bfriesen Exp $ */
 
 /*
  * Apply median cut on an image.

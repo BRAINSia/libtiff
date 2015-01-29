@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: rewrite_tag.c,v 1.6 2013-12-17 14:41:58 bfriesen Exp $ */
 
 /*
  * Copyright (c) 2007, Frank Warmerdam <warmerdam@pobox.com>

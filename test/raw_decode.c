@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: raw_decode.c,v 1.5 2012-12-20 18:08:07 tgl Exp $ */
 
 /*
  * Copyright (c) 2012, Frank Warmerdam <warmerdam@pobox.com>

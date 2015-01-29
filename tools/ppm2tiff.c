@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: ppm2tiff.c,v 1.18 2012-12-10 18:19:11 tgl Exp $ */
 
 /*
  * Copyright (c) 1991-1997 Sam Leffler

@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: tiffdither.c,v 1.14 2013-05-02 14:44:29 tgl Exp $ */
 
 /*
  * Copyright (c) 1988-1997 Sam Leffler

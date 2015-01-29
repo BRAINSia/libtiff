@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id$
+ * $Id: addtiffo.c,v 1.7 2010-06-08 18:55:15 bfriesen Exp $
  *
  * Project:  GeoTIFF Overview Builder
  * Purpose:  Mainline for building overviews in a TIFF file.
@@ -27,7 +27,7 @@
  * DEALINGS IN THE SOFTWARE.
  ******************************************************************************
  *
- * $Log$
+ * $Log: addtiffo.c,v $
  * Revision 1.7  2010-06-08 18:55:15  bfriesen
  * * contrib: Add an emacs formatting mode footer to all source files
  * so that emacs can be effectively used.

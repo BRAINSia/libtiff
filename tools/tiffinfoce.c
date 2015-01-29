@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: tiffinfoce.c,v 1.4 2010-12-11 19:33:48 faxguy Exp $ */
 
 /*
  * Copyright (c) 1988-1997 Sam Leffler

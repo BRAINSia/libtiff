@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: tif_pixarlog.c,v 1.39 2012-12-10 17:27:13 tgl Exp $ */
 
 /*
  * Copyright (c) 1996-1997 Sam Leffler

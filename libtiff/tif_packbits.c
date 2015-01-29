@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: tif_packbits.c,v 1.22 2012-06-20 05:25:33 fwarmerdam Exp $ */
 
 /*
  * Copyright (c) 1988-1997 Sam Leffler

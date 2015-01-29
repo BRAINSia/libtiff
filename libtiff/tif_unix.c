@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: tif_unix.c,v 1.24 2012-11-18 17:51:52 bfriesen Exp $ */
 
 /*
  * Copyright (c) 1988-1997 Sam Leffler

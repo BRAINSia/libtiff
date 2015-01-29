@@ -1,4 +1,4 @@
-/* $Id$
+/* $Id: tiff2pdf.c,v 1.83 2015-01-22 09:58:49 erouault Exp $
  *
  * tiff2pdf - converts a TIFF image to a PDF document
  *
@@ -32,6 +32,7 @@
 #include <ctype.h>
 #include <time.h>
 #include <errno.h>
+#include <limits.h>
 
 #if HAVE_UNISTD_H
 # include <unistd.h>
@@ -411,8 +412,8 @@ t2p_seekproc(thandle_t handle, uint64 offset, int whence)
 static int 
 t2p_closeproc(thandle_t handle)
 { 
-	(void) handle;
-	return 0; 
+	T2P *t2p = (T2P*) handle;
+	return fclose(t2p->outputfile);
 }
 
 static uint64 
@@ -440,7 +441,7 @@ checkAdd64(uint64 summand1, uint64 summand2, T2P* t2p)
 {
 	uint64 bytes = summand1 + summand2;
 
-	if (bytes - summand1 != summand2) {
+	if (bytes < summand1) {
 		TIFFError(TIFF2PDF_MODULE, "Integer overflow");
 		t2p->t2p_error = T2P_ERR_ERROR;
 		bytes = 0;
@@ -1035,7 +1036,7 @@ void t2p_read_tiff_init(T2P* t2p, TIFF* input){
 	uint16 xuint16=0;
 
 	directorycount=TIFFNumberOfDirectories(input);
-	t2p->tiff_pages = (T2P_PAGE*) _TIFFmalloc(directorycount * sizeof(T2P_PAGE));
+	t2p->tiff_pages = (T2P_PAGE*) _TIFFmalloc(TIFFSafeMultiply(tmsize_t,directorycount,sizeof(T2P_PAGE)));
 	if(t2p->tiff_pages==NULL){
 		TIFFError(
 			TIFF2PDF_MODULE, 
@@ -1046,7 +1047,7 @@ void t2p_read_tiff_init(T2P* t2p, TIFF* input){
 		return;
 	}
 	_TIFFmemset( t2p->tiff_pages, 0x00, directorycount * sizeof(T2P_PAGE));
-	t2p->tiff_tiles = (T2P_TILES*) _TIFFmalloc(directorycount * sizeof(T2P_TILES));
+	t2p->tiff_tiles = (T2P_TILES*) _TIFFmalloc(TIFFSafeMultiply(tmsize_t,directorycount,sizeof(T2P_TILES)));
 	if(t2p->tiff_tiles==NULL){
 		TIFFError(
 			TIFF2PDF_MODULE, 
@@ -1136,8 +1137,10 @@ void t2p_read_tiff_init(T2P* t2p, TIFF* input){
                                  &(t2p->tiff_transferfunction[0]),
                                  &(t2p->tiff_transferfunction[1]),
                                  &(t2p->tiff_transferfunction[2]))) {
-			if(t2p->tiff_transferfunction[1] !=
-			   t2p->tiff_transferfunction[0]) {
+			if((t2p->tiff_transferfunction[1] != (float*) NULL) &&
+                           (t2p->tiff_transferfunction[2] != (float*) NULL) &&
+                           (t2p->tiff_transferfunction[1] !=
+                            t2p->tiff_transferfunction[0])) {
 				t2p->tiff_transferfunctioncount = 3;
 				t2p->tiff_pages[i].page_extra += 4;
 				t2p->pdf_xrefcount += 4;
@@ -1164,7 +1167,24 @@ void t2p_read_tiff_init(T2P* t2p, TIFF* input){
 			t2p->tiff_pages[i].page_tilecount;
 		if( (TIFFGetField(input, TIFFTAG_PLANARCONFIG, &xuint16) != 0)
 			&& (xuint16 == PLANARCONFIG_SEPARATE ) ){
-				TIFFGetField(input, TIFFTAG_SAMPLESPERPIXEL, &xuint16);
+				if( !TIFFGetField(input, TIFFTAG_SAMPLESPERPIXEL, &xuint16) )
+				{
+					TIFFError(
+                        TIFF2PDF_MODULE, 
+                        "Missing SamplesPerPixel, %s", 
+                        TIFFFileName(input));
+                    t2p->t2p_error = T2P_ERR_ERROR;
+                    return;
+				}
+                if( (t2p->tiff_tiles[i].tiles_tilecount % xuint16) != 0 )
+                {
+                    TIFFError(
+                        TIFF2PDF_MODULE, 
+                        "Invalid tile count, %s", 
+                        TIFFFileName(input));
+                    t2p->t2p_error = T2P_ERR_ERROR;
+                    return;
+                }
 				t2p->tiff_tiles[i].tiles_tilecount/= xuint16;
 		}
 		if( t2p->tiff_tiles[i].tiles_tilecount > 0){
@@ -1177,9 +1197,8 @@ void t2p_read_tiff_init(T2P* t2p, TIFF* input){
 				TIFFTAG_TILELENGTH, 
 				&( t2p->tiff_tiles[i].tiles_tilelength) );
 			t2p->tiff_tiles[i].tiles_tiles = 
-			(T2P_TILE*) _TIFFmalloc(
-				t2p->tiff_tiles[i].tiles_tilecount 
-				* sizeof(T2P_TILE) );
+			(T2P_TILE*) _TIFFmalloc(TIFFSafeMultiply(tmsize_t,t2p->tiff_tiles[i].tiles_tilecount,
+                                                                 sizeof(T2P_TILE)) );
 			if( t2p->tiff_tiles[i].tiles_tiles == NULL){
 				TIFFError(
 					TIFF2PDF_MODULE, 
@@ -1197,12 +1216,18 @@ void t2p_read_tiff_init(T2P* t2p, TIFF* input){
 
 /*
  * This function is used by qsort to sort a T2P_PAGE* array of page structures
- * by page number.
+ * by page number. If the page numbers are the same, we fall back to comparing
+ * directory numbers to preserve the order of the input file.
  */
 
 int t2p_cmp_t2p_page(const void* e1, const void* e2){
 
-	return( ((T2P_PAGE*)e1)->page_number - ((T2P_PAGE*)e2)->page_number );
+	int d;
+	d = (int32)(((T2P_PAGE*)e1)->page_number) - (int32)(((T2P_PAGE*)e2)->page_number);
+	if(d == 0){
+		d = (int32)(((T2P_PAGE*)e1)->page_directory) - (int32)(((T2P_PAGE*)e2)->page_directory);
+	}
+	return d;
 }
 
 /*
@@ -1380,10 +1405,28 @@ void t2p_read_tiff_data(T2P* t2p, TIFF* input){
 							&xuint16, &xuint16p)
 					   && xuint16 == 1) {
 						if(xuint16p[0] == EXTRASAMPLE_ASSOCALPHA){
+							if( t2p->tiff_bitspersample != 8 )
+							{
+							    TIFFError(
+								    TIFF2PDF_MODULE, 
+								    "No support for BitsPerSample=%d for RGBA",
+								    t2p->tiff_bitspersample);
+							    t2p->t2p_error = T2P_ERR_ERROR;
+							    return;
+							}
 							t2p->pdf_sample=T2P_SAMPLE_RGBAA_TO_RGB;
 							break;
 						}
 						if(xuint16p[0] == EXTRASAMPLE_UNASSALPHA){
+							if( t2p->tiff_bitspersample != 8 )
+							{
+							    TIFFError(
+								    TIFF2PDF_MODULE, 
+								    "No support for BitsPerSample=%d for RGBA",
+								    t2p->tiff_bitspersample);
+							    t2p->t2p_error = T2P_ERR_ERROR;
+							    return;
+							}
 							t2p->pdf_sample=T2P_SAMPLE_RGBA_TO_RGB;
 							break;
 						}
@@ -1443,7 +1486,7 @@ void t2p_read_tiff_data(T2P* t2p, TIFF* input){
 				t2p->pdf_palette=NULL;
 			}
 			t2p->pdf_palette = (unsigned char*)
-				_TIFFmalloc(t2p->pdf_palettesize*3);
+				_TIFFmalloc(TIFFSafeMultiply(tmsize_t,t2p->pdf_palettesize,3));
 			if(t2p->pdf_palette==NULL){
 				TIFFError(
 					TIFF2PDF_MODULE, 
@@ -1512,7 +1555,7 @@ void t2p_read_tiff_data(T2P* t2p, TIFF* input){
 				t2p->pdf_palette=NULL;
 			}
 			t2p->pdf_palette = (unsigned char*) 
-				_TIFFmalloc(t2p->pdf_palettesize*4);
+				_TIFFmalloc(TIFFSafeMultiply(tmsize_t,t2p->pdf_palettesize,4));
 			if(t2p->pdf_palette==NULL){
 				TIFFError(
 					TIFF2PDF_MODULE, 
@@ -1545,6 +1588,22 @@ void t2p_read_tiff_data(T2P* t2p, TIFF* input){
 #endif
 			break;
 		case PHOTOMETRIC_CIELAB:
+            if( t2p->tiff_samplesperpixel != 3){
+                TIFFError(
+                    TIFF2PDF_MODULE, 
+                    "Unsupported samplesperpixel = %d for CIELAB", 
+                    t2p->tiff_samplesperpixel);
+                t2p->t2p_error = T2P_ERR_ERROR;
+                return;
+            }
+            if( t2p->tiff_bitspersample != 8){
+                TIFFError(
+                    TIFF2PDF_MODULE, 
+                    "Invalid bitspersample = %d for CIELAB", 
+                    t2p->tiff_bitspersample);
+                t2p->t2p_error = T2P_ERR_ERROR;
+                return;
+            }
 			t2p->pdf_labrange[0]= -127;
 			t2p->pdf_labrange[1]= 127;
 			t2p->pdf_labrange[2]= -127;
@@ -1560,6 +1619,22 @@ void t2p_read_tiff_data(T2P* t2p, TIFF* input){
 			t2p->pdf_colorspace=T2P_CS_LAB;
 			break;
 		case PHOTOMETRIC_ITULAB:
+            if( t2p->tiff_samplesperpixel != 3){
+                TIFFError(
+                    TIFF2PDF_MODULE, 
+                    "Unsupported samplesperpixel = %d for ITULAB", 
+                    t2p->tiff_samplesperpixel);
+                t2p->t2p_error = T2P_ERR_ERROR;
+                return;
+            }
+            if( t2p->tiff_bitspersample != 8){
+                TIFFError(
+                    TIFF2PDF_MODULE, 
+                    "Invalid bitspersample = %d for ITULAB", 
+                    t2p->tiff_bitspersample);
+                t2p->t2p_error = T2P_ERR_ERROR;
+                return;
+            }
 			t2p->pdf_labrange[0]=-85;
 			t2p->pdf_labrange[1]=85;
 			t2p->pdf_labrange[2]=-75;
@@ -1645,6 +1720,8 @@ void t2p_read_tiff_data(T2P* t2p, TIFF* input){
 	}
 
 	t2p_compose_pdf_page(t2p);
+        if( t2p->t2p_error == T2P_ERR_ERROR )
+	    return;
 
 	t2p->pdf_transcode = T2P_TRANSCODE_ENCODE;
 	if(t2p->pdf_nopassthrough==0){
@@ -1732,8 +1809,10 @@ void t2p_read_tiff_data(T2P* t2p, TIFF* input){
 			 &(t2p->tiff_transferfunction[0]),
 			 &(t2p->tiff_transferfunction[1]),
 			 &(t2p->tiff_transferfunction[2]))) {
-		if(t2p->tiff_transferfunction[1] !=
-		   t2p->tiff_transferfunction[0]) {
+		if((t2p->tiff_transferfunction[1] != (float*) NULL) &&
+                   (t2p->tiff_transferfunction[2] != (float*) NULL) &&
+                   (t2p->tiff_transferfunction[1] !=
+                    t2p->tiff_transferfunction[0])) {
 			t2p->tiff_transferfunctioncount=3;
 		} else {
 			t2p->tiff_transferfunctioncount=1;
@@ -1896,9 +1975,11 @@ void t2p_read_tiff_size(T2P* t2p, TIFF* input){
 			}
 			for(i=0;i<stripcount;i++){
 				k = checkAdd64(k, sbc[i], t2p);
-				k -=4; /* don't use SOI or EOI of strip */
+				k -=2; /* don't use EOI of strip */
+				k +=2; /* add space for restart marker */
 			}
 			k = checkAdd64(k, 2, t2p); /* use EOI of last strip */
+			k = checkAdd64(k, 6, t2p); /* for DRI marker of first strip */
 			t2p->tiff_datasize = (tsize_t) k;
 			if ((uint64) t2p->tiff_datasize != k) {
 				TIFFError(TIFF2PDF_MODULE, "Integer overflow");
@@ -2099,7 +2180,8 @@ tsize_t t2p_readwrite_pdf_image(T2P* t2p, TIFF* input, TIFF* output){
 				_TIFFmalloc(t2p->tiff_datasize);
 			if (buffer == NULL) {
 				TIFFError(TIFF2PDF_MODULE, 
-	"Can't allocate %lu bytes of memory for t2p_readwrite_pdf_image, %s", 
+                                          "Can't allocate %lu bytes of memory for "
+                                          "t2p_readwrite_pdf_image, %s", 
 					(unsigned long) t2p->tiff_datasize, 
 					TIFFFileName(input));
 				t2p->t2p_error = T2P_ERR_ERROR;
@@ -2349,7 +2431,7 @@ tsize_t t2p_readwrite_pdf_image(T2P* t2p, TIFF* input, TIFF* output){
 				TIFFReadEncodedStrip(input, 
 				i, 
 				(tdata_t) &buffer[bufferoffset], 
-				stripsize);
+				TIFFmin(stripsize, t2p->tiff_datasize - bufferoffset));
 			if(read==-1){
 				TIFFError(TIFF2PDF_MODULE, 
 					"Error on decoding strip %u of %s", 
@@ -2396,7 +2478,7 @@ tsize_t t2p_readwrite_pdf_image(T2P* t2p, TIFF* input, TIFF* output){
 						TIFFReadEncodedStrip(input, 
 							i + j*stripcount, 
 							(tdata_t) &(samplebuffer[samplebufferoffset]), 
-							sepstripsize);
+							TIFFmin(sepstripsize, stripsize - samplebufferoffset));
 					if(read==-1){
 						TIFFError(TIFF2PDF_MODULE, 
 					"Error on decoding strip %u of %s", 
@@ -2436,7 +2518,7 @@ tsize_t t2p_readwrite_pdf_image(T2P* t2p, TIFF* input, TIFF* output){
 				TIFFReadEncodedStrip(input, 
 				i, 
 				(tdata_t) &buffer[bufferoffset], 
-				stripsize);
+				TIFFmin(stripsize, t2p->tiff_datasize - bufferoffset));
 			if(read==-1){
 				TIFFError(TIFF2PDF_MODULE, 
 					"Error on decoding strip %u of %s", 
@@ -2658,7 +2740,7 @@ tsize_t t2p_readwrite_pdf_image_tile(T2P* t2p, TIFF* input, TIFF* output, ttile_
 	tsize_t read=0;
 	uint16 i=0;
 	ttile_t tilecount=0;
-	tsize_t tilesize=0;
+	/* tsize_t tilesize=0; */
 	ttile_t septilecount=0;
 	tsize_t septilesize=0;
 #ifdef JPEG_SUPPORT
@@ -2847,7 +2929,7 @@ tsize_t t2p_readwrite_pdf_image_tile(T2P* t2p, TIFF* input, TIFF* output, ttile_
 		if(t2p->pdf_sample == T2P_SAMPLE_PLANAR_SEPARATE_TO_CONTIG){
 			septilesize=TIFFTileSize(input);
 			septilecount=TIFFNumberOfTiles(input);
-			tilesize=septilesize*t2p->tiff_samplesperpixel;
+			/* tilesize=septilesize*t2p->tiff_samplesperpixel; */
 			tilecount=septilecount/t2p->tiff_samplesperpixel;
 			buffer = (unsigned char*) _TIFFmalloc(t2p->tiff_datasize);
 			if(buffer==NULL){
@@ -3582,7 +3664,7 @@ t2p_sample_rgba_to_rgb(tdata_t data, uint32 samplecount)
 	uint32 i = 0;
 	uint32 sample = 0;
 	uint8 alpha = 0;
-	
+
 	for (i = 0; i < samplecount; i++) {
 		sample=((uint32*)data)[i];
 		alpha=(uint8)((255 - ((sample >> 24) & 0xff)));
@@ -4313,6 +4395,15 @@ void t2p_compose_pdf_page(T2P* t2p){
 	} else {
 		tilewidth=(t2p->tiff_tiles[t2p->pdf_page]).tiles_tilewidth;
 		tilelength=(t2p->tiff_tiles[t2p->pdf_page]).tiles_tilelength;
+		if( tilewidth > INT_MAX ||
+		    tilelength > INT_MAX ||
+		    t2p->tiff_width > INT_MAX - tilewidth ||
+		    t2p->tiff_length > INT_MAX - tilelength )
+		{
+		    TIFFError(TIFF2PDF_MODULE, "Integer overflow");
+		    t2p->t2p_error = T2P_ERR_ERROR;
+		    return;
+		}
 		tilecountx=(t2p->tiff_width + 
 			tilewidth -1)/ 
 			tilewidth;
@@ -5212,7 +5303,7 @@ tsize_t t2p_write_pdf(T2P* t2p, TIFF* input, TIFF* output){
 
 	t2p_read_tiff_init(t2p, input);
 	if(t2p->t2p_error!=T2P_ERR_OK){return(0);}
-	t2p->pdf_xrefoffsets= (uint32*) _TIFFmalloc(t2p->pdf_xrefcount * sizeof(uint32) );
+	t2p->pdf_xrefoffsets= (uint32*) _TIFFmalloc(TIFFSafeMultiply(tmsize_t,t2p->pdf_xrefcount,sizeof(uint32)) );
 	if(t2p->pdf_xrefoffsets==NULL){
 		TIFFError(
 			TIFF2PDF_MODULE, 

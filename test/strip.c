@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: strip.c,v 1.5 2013-12-17 14:41:58 bfriesen Exp $ */
 
 /*
  * Copyright (c) 2004, Andrey Kiselev  <dron@ak4719.spb.edu>

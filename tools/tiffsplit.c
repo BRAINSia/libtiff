@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: tiffsplit.c,v 1.22 2011-10-22 17:03:01 bfriesen Exp $ */
 
 /*
  * Copyright (c) 1992-1997 Sam Leffler

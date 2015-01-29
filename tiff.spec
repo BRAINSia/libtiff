@@ -1,4 +1,4 @@
-# $Id$
+# $Id: tiff.spec,v 1.1 2004-06-14 15:07:42 dron Exp $
 #
 # TIFF Software
 #

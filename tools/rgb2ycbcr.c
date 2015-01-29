@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: rgb2ycbcr.c,v 1.15 2013-05-02 14:44:29 tgl Exp $ */
 
 /*
  * Copyright (c) 1991-1997 Sam Leffler

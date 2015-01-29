@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: tif_luv.c,v 1.35 2011-04-02 20:54:09 bfriesen Exp $ */
 
 /*
  * Copyright (c) 1997 Greg Ward Larson

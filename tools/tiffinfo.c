@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: tiffinfo.c,v 1.22 2013-07-10 00:44:22 fwarmerdam Exp $ */
 
 /*
  * Copyright (c) 1988-1997 Sam Leffler
